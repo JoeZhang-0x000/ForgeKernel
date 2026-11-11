@@ -52,7 +52,7 @@ def pi(tmp_path, monkeypatch):
     work = tmp_path / "ws"
     work.mkdir()
     env = {**os.environ, "FK_PI_BIN": str(fake), "FK_PI_STATE_DIR": str(tmp_path / "state"),
-           "FAKE_PI_ARGV": str(tmp_path / "argv.json"), "FK_PI_UNSANDBOXED": "1", "FK_AGENT_PY": sys.executable}
+           "FAKE_PI_ARGV": str(tmp_path / "argv.json"), "FK_AGENT_PY": sys.executable}
     for k in ("FK_DEADLINE_EPOCH", "FK_PI_EXTENSIONS", "FAKE_PI_MODE", "FK_AGENT_ROLE"):
         env.pop(k, None)
 
@@ -117,9 +117,12 @@ def test_the_turn_is_cut_at_its_timeout_and_at_the_loops_deadline(pi):
     assert 'LEFT" -lt "$TIMEOUT"' in SCRIPT.read_text()
 
 
-def test_without_the_policy_it_refuses_unless_told_so(pi):
-    r, argv, _ = pi(FK_PI_UNSANDBOXED="")
-    assert r.returncode == 2 and argv is None and "not enforced on pi yet" in r.stderr
+def test_it_runs_without_a_sandbox_and_says_the_policy_is_not_enforced(pi):
+    """This backend adds no isolation of its own (the policy is Claude Code settings, which pi does not read):
+    nothing has to be set for a turn to run, and the launcher says so where a reader of it looks."""
+    r, argv, _ = pi()
+    assert r.returncode == 0 and argv is not None
+    assert "NOT enforced on pi" in SCRIPT.read_text()
 
 
 def test_a_task_may_name_the_pi_backend_and_gets_its_launcher(monkeypatch):
@@ -134,3 +137,62 @@ def test_a_task_may_name_the_pi_backend_and_gets_its_launcher(monkeypatch):
     # the context-window gate is about claude model ids behind a gateway: a pi command has no such leg
     facts = agentctx.inspect_agent_cmd(cmd, {"ANTHROPIC_BASE_URL": "https://gateway.example"}, cwd=REPO)
     assert agentctx.window_findings(facts) == []
+
+
+def test_a_run_on_pi_goes_without_the_agent_policy(tmp_path):
+    """The policy is Claude Code settings; a pi agent would run beside it, not under it. So a run with a pi agent
+    is told to go without: nothing installed, no notice in front of the prompt, no refusal at launch."""
+    from types import SimpleNamespace as NS
+
+    from forgekernel import launch
+    from forgekernel.loop import cli as loop_cli
+    pi_spec = AgentSpec(backend="pi", model="bailian/qwen3.8-max", effort=None)
+    claude = AgentSpec(backend="claude", model="claude-opus-5-5", effort=None)
+    assert launch.policy_free(NS(teacher=pi_spec, student=pi_spec))
+    assert launch.policy_free(NS(teacher=claude, student=pi_spec))      # half a policy is not a policy
+    assert not launch.policy_free(NS(teacher=claude, student=claude))
+    # the backend the loop builds for such a run: the prompt reaches the agent as written, nothing in .claude/
+    script = tmp_path / "echo.sh"
+    script.write_text("#!/bin/sh\ncat\n")
+    script.chmod(stat.S_IRWXU)
+    work = tmp_path / "ws"
+    work.mkdir()
+    be = loop_cli.RealBackend("op", work, str(script), "n", "n@localhost", agent_policy=None)
+    assert be.run_agent("the prompt as written") == "the prompt as written"
+    assert not (work / ".claude").exists()
+
+
+def test_a_board_card_with_a_source_reference_gives_it_to_the_teacher(tmp_path):
+    """The dataset's baseline solution ships in the card as source. The loop config names its files as the
+    oracle, entry first, at their place in the run's workspace, so the run distils a milestone from the
+    reference; a card whose reference is the definition's own, or sealed, gets none."""
+    import tomllib
+    from types import SimpleNamespace as NS
+
+    from forgekernel import taskcard
+    op, ws = tmp_path / "card", tmp_path / "run" / "ws"
+    base = op / "eval" / "leaderboard" / "baseline"
+    (base / "kernel").mkdir(parents=True)
+    (base / "main.py").write_text("def run(): ...\n")
+    (base / "kernel" / "impl.py").write_text("x = 1\n")
+    (base / "__pycache__").mkdir()
+    (base / "__pycache__" / "main.cpython-312.pyc").write_bytes(b"\0")
+    problem = {"reference_impl": {"kind": "baseline_solution", "name": "seed", "path": "baseline/main.py", "entry": "run"}}
+    (op / "eval" / "leaderboard" / "problem.json").write_text(json.dumps(problem))
+    (op / "loop.toml.example").write_text('[loop]\nlanguage = "cutedsl"\nref_cmd = "python3 eval/bench.py --mode ref"\n')
+    task = NS(arch="sm90", target=NS(timing="device"))
+    run = NS(ws=ws)
+    loop = tomllib.loads(taskcard.write_board_loop_toml(run, task, op, deny=[]).read_text())["loop"]
+    want = [str(ws / "eval" / "leaderboard" / "baseline" / "main.py"),
+            str(ws / "eval" / "leaderboard" / "baseline" / "kernel" / "impl.py")]
+    assert loop["oracle"] == want and loop["kb_arch"] == "sm90" and "oracle_mode" not in loop
+    from forgekernel.loop.cli import _resolve_oracle, _resolve_oracle_mode
+    mode = _resolve_oracle_mode(False, None, {"loop": loop})
+    assert mode == "source" and _resolve_oracle(mode, None, {"loop": loop}) == ", ".join(want)
+
+    for other in ({"kind": "definition"}, {"kind": "sealed", "name": "x"}):
+        (op / "eval" / "leaderboard" / "problem.json").write_text(json.dumps({"reference_impl": other}))
+        assert "oracle" not in tomllib.loads(taskcard.write_board_loop_toml(run, task, op, deny=[]).read_text())["loop"]
+    (op / "eval" / "leaderboard" / "problem.json").write_text(json.dumps(problem))
+    (op / "loop.toml.example").write_text('[loop]\noracle_mode = "blackbox"\n')        # a card that says otherwise keeps its say
+    assert "oracle" not in tomllib.loads(taskcard.write_board_loop_toml(run, task, op, deny=[]).read_text())["loop"]
