@@ -83,7 +83,7 @@ LANGUAGES = ("cutedsl", "cuda")
 # The loop's own language name for each task language (forgekernel.loop.lang_mode).
 LOOP_LANGUAGE = {"cutedsl": "cutedsl", "cuda": "cuda-sol"}
 TIMINGS = ("device", "e2e")
-BACKENDS = ("claude",)
+BACKENDS = ("claude", "pi")
 ROLES = ("teacher", "student")
 MIN_INPUT_GROUPS = 3
 
