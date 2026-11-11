@@ -484,7 +484,7 @@ def write_judge(run, task, check_dir: Path, deny: list[str], feedback: str = "")
                          secret_files=(), language=task.loop_language)
     be = RealBackend(task.name, check_dir, None, "forge-judge", "forge-judge@localhost",
                      teacher_agent_cmd=agent_command(task.teacher, "teacher"),
-                     agent_policy=policy)
+                     agent_policy=None if policy_free(task) else policy)
     be.agent_cmd = be.teacher_agent_cmd
     source = task.reference.source if task.mode == MODE_SOURCE else None
     for attempt in range(1, judge_mod.ATTEMPTS + 1):
@@ -557,6 +557,16 @@ def _refresh_machine(run, task, machine) -> None:
             taskcard._commit(tree, "Chore: follow local.env")
 
 
+# Agent CLIs that do not read the settings the agent policy is delivered in (.claude/settings.json).
+POLICY_FREE_BACKENDS = ("pi",)
+
+
+def policy_free(task) -> bool:
+    """Whether the run's agents cannot be given the agent policy: one of them runs on a CLI
+    that ignores it. Such a run goes without the policy as a whole rather than with half of it."""
+    return any(a.backend in POLICY_FREE_BACKENDS for a in (task.teacher, task.student))
+
+
 def run_loop(run, task, *, resuming: bool, harvest_only: bool) -> int:
     from forgekernel.loop import cli as loop_cli
     argv = [task.name, "--workspace", str(run.ws),
@@ -569,6 +579,8 @@ def run_loop(run, task, *, resuming: bool, harvest_only: bool) -> int:
         argv += ["--equivalence-ratio", repr(task.target.ratio)]
     if resuming:
         argv += ["--allow-preexisting-artifacts", "--allow-dirty-kb"]
+    if policy_free(task):
+        argv.append("--no-agent-policy")
     if harvest_only:
         argv.append("--harvest-only")
     _say("the loop: " + " ".join(argv[:5]) + " ...")

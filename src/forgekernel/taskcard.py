@@ -246,6 +246,14 @@ def write_board_loop_toml(run, task, op_dir: Path, *, deny: list[str], ncu: bool
         [str(p) for p in lc.get("ref_source_paths", [])] + list(deny)))
     lc.setdefault("ref_source_urls", [])
     lc.setdefault("ref_from_goal", "off")
+    if "oracle" not in lc and lc.get("oracle_mode", "source") == "source":
+        # A board card whose reference is a solution in source form (the dataset's baseline,
+        # eval/leaderboard/baseline/): the teacher reads it, so the run distils a milestone
+        # from it before the first student turn. Without an oracle the loop skips the
+        # distillation (driver._needs_authoring) and the student starts with no milestone.
+        oracle = board_reference_sources(op_dir, run.ws)
+        if oracle:
+            lc["oracle"] = oracle
     if not ncu:
         lc.update(ncu_available=False, job_env_preflight="warn", timeline_probe="off",
                   stall_pricing=False, orch_census=False)
@@ -255,6 +263,26 @@ def write_board_loop_toml(run, task, op_dir: Path, *, deny: list[str], ncu: bool
     p = Path(op_dir) / "loop.toml"
     p.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return p
+
+
+def board_reference_sources(op_dir: Path, workspace: Path) -> list[str]:
+    """The source files of a board card's in-job reference when it is a solution shipped in
+    source form (reference_impl kind ``baseline_solution``), as paths in the run's workspace;
+    empty for a sealed or binary reference and for the definition's own reference."""
+    try:
+        problem = json.loads((Path(op_dir) / "eval" / "leaderboard" / "problem.json").read_text(
+            encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    ref = problem.get("reference_impl") or {}
+    if ref.get("kind") != "baseline_solution":
+        return []
+    base = Path(op_dir) / "eval" / "leaderboard" / "baseline"
+    files = sorted(f for f in base.rglob("*") if f.is_file() and f.suffix != ".pyc"
+                   and "__pycache__" not in f.parts)
+    entry = base / Path(str(ref.get("path", ""))).relative_to("baseline") if ref.get("path") else None
+    files.sort(key=lambda f: (f != entry, str(f)))           # the entry first: it is what is called
+    return [str(Path(workspace) / f.relative_to(op_dir)) for f in files]
 
 
 def _toml_value(v) -> str:

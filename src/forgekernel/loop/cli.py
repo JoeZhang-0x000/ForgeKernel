@@ -2231,6 +2231,12 @@ def _main(argv: list[str] | None = None) -> int:
     p.add_argument("--branch-prefix", default=None)
     p.add_argument("--agent-cmd", default=None,
                    help="headless agent: reads prompt on stdin, prints final message to stdout")
+    p.add_argument("--no-agent-policy", action="store_true",
+                   help="run the agents without the agent policy (student offline, no reference "
+                        "source): nothing is installed before a turn, no notice is put in front "
+                        "of a prompt, and the launch does not refuse over it. For an agent CLI "
+                        "that does not read the policy's settings (the pi backend); the student "
+                        "can then read whatever the teacher can")
     p.add_argument("--allow-200k-window", action="store_true",
                    help="start even though --agent-cmd names a bare claude model id behind "
                         "a gateway (ANTHROPIC_BASE_URL): the claude CLI then budgets the "
@@ -2443,6 +2449,10 @@ def _main(argv: list[str] | None = None) -> int:
     # leg that skips project settings or leaves the directory would run unrestricted.
     policy_problems += agent_policy_mod.command_findings(
         window_cmds, dict(os.environ), args.workspace)
+    if args.no_agent_policy:
+        sys.stderr.write("[loop] --no-agent-policy: the agents run without the agent policy; the "
+                         "student is not kept offline or away from the reference\n")
+        policy_problems = []
     if policy_problems:
         for f in policy_problems:
             sys.stderr.write(f"[loop]   {f}\n")
@@ -2672,6 +2682,8 @@ def _main(argv: list[str] | None = None) -> int:
             _student_denied_oracle(oracle_mode, args.oracle, cfg, declared_oracle)),
         dsl_source_dirs_default=dsl_source.dirs if dsl_source.defaulted else (),
         language=language)
+    if args.no_agent_policy:
+        policy = None
     backend = RealBackend(args.op, workspace, args.agent_cmd, args.git_name, args.git_email,
                           teacher_agent_cmd=args.teacher_agent_cmd, agent_policy=policy,
                           agent_heartbeat_s=args.agent_heartbeat_s)
