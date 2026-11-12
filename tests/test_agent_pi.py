@@ -41,6 +41,9 @@ elif mode == "silent":
     emit(type="agent_end")
 elif mode == "hang":
     import time; time.sleep(60)
+elif mode == "slow":
+    msg("working on it")
+    import time; time.sleep(60)
 """
 
 
@@ -121,6 +124,13 @@ def test_the_turn_is_cut_at_its_timeout_and_at_the_loops_deadline(pi):
     left = subprocess.run([sys.executable, "-c", probe, str(time.time() + 600)], capture_output=True, text=True, check=True)
     assert 590 <= int(left.stdout) <= 600
     assert 'LEFT" -lt "$TIMEOUT"' in SCRIPT.read_text()
+
+
+def test_a_turn_cut_at_its_timeout_still_logs_what_it_spent(pi):
+    r, _, usage = pi("x", "bailian/qwen3.8-max", "", "2", FAKE_PI_MODE="slow")
+    assert r.returncode == 124
+    assert len(usage) == 1 and usage[0]["rc"] == 124
+    assert usage[0]["input"] == 100 and usage[0]["assistant_messages"] == 1
 
 
 def test_it_runs_without_a_sandbox_and_says_the_policy_is_not_enforced(pi):

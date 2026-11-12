@@ -1,5 +1,7 @@
 """Tests for forge loop CLI oracle resolution + bounded GPU poll."""
 
+import time
+
 import pytest
 
 from forgekernel.baseline import RefBaseline
@@ -635,6 +637,30 @@ def _agent_backend(monkeypatch, replies, **kw):
 
     monkeypatch.setattr(b, "_agent_turn", _turn)
     return b
+
+
+def test_a_turn_that_fails_past_the_deadline_is_not_started_again(monkeypatch):
+    # The loop reads its deadline between iterations only: a student turn that timed out after
+    # the budget was started again and the run went on for another hour (a 1 h budget, 2 h run).
+    from forgekernel.loop.driver import AgentError
+    timed_out = _FakeProc(124)
+    b = _agent_backend(monkeypatch, [timed_out, _FakeProc(0, stdout="done")], agent_retries=3)
+    b.deadline_epoch = time.time() - 1
+    with pytest.raises(AgentError, match="budget ran out"):
+        b.run_agent("go")
+    # before the deadline the same failure is retried as it always was
+    b = _agent_backend(monkeypatch, [timed_out, _FakeProc(0, stdout="done")], agent_retries=3)
+    b.deadline_epoch = time.time() + 3600
+    assert b.run_agent("go") == "done"
+
+
+def test_an_agent_turn_is_told_the_loops_deadline(tmp_path):
+    from forgekernel.loop.cli import RealBackend
+    b = RealBackend("op", tmp_path, None, "n", "e")
+    cmd = 'cat >/dev/null; printf "%s" "${FK_DEADLINE_EPOCH:-none}"'
+    assert b._agent_turn(cmd, "go", "student")[1] == "none"
+    b.deadline_epoch = 1234567890.4
+    assert b._agent_turn(cmd, "go", "student")[1] == "1234567890"
 
 
 def test_a_529_overload_waits_instead_of_spending_the_hiccup_budget(monkeypatch):

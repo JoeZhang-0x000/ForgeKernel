@@ -40,4 +40,10 @@ fi
 if [ "${FK_AGENT_DRIVER:-}" = "goal" ]; then
     exec bash "$HERE/claude-goal.sh" "$MODEL" "$MODEL" "${ARGS[@]}"
 fi
+# The loop reads its deadline between iterations only; with FK_DEADLINE_EPOCH (seconds since the
+# epoch) the turn is cut to what is left of the budget, as in agent-pi.sh.
+if [ -n "${FK_DEADLINE_EPOCH:-}" ]; then
+    LEFT=$("$PY" -c 'import sys, time; print(max(60, int(float(sys.argv[1]) - time.time())))' "$FK_DEADLINE_EPOCH") || exit 2
+    [ "$LEFT" -lt "$TIMEOUT" ] && TIMEOUT=$LEFT
+fi
 exec "$PY" "$HERE/timeout-run.py" "$TIMEOUT" "${FK_CLAUDE_BIN:-claude}" -p --model "$MODEL" "${ARGS[@]}"

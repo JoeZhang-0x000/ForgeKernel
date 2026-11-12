@@ -321,6 +321,11 @@ class RealBackend:
         self.kernel_file = ""
         self.last_mode = ""  # the gpu_entry mode of last_job_id (its closing line names the task)
         self.poll_timeout_s = poll_timeout_s  # per-job poll bound
+        # The loop's deadline (seconds since the epoch), set by whoever knows the budget; None = no
+        # budget. The loop reads its deadline between iterations only, so the agent turns carry it:
+        # a turn is cut to what is left (the launcher reads FK_DEADLINE_EPOCH), and a turn that
+        # failed is not started again once the deadline has passed.
+        self.deadline_epoch: float | None = None
         self.last_job_id = ""  # set by submit_gpu; provenance for whoever records results
 
     @property
@@ -347,9 +352,12 @@ class RealBackend:
         drains the pipes so this side can print a line every
         ``agent_heartbeat_s`` seconds.
         """
+        env = None
+        if self.deadline_epoch is not None:
+            env = {**os.environ, "FK_DEADLINE_EPOCH": f"{self.deadline_epoch:.0f}"}
         proc = subprocess.Popen(
             cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, text=True, cwd=self.workspace,
+            stderr=subprocess.PIPE, text=True, cwd=self.workspace, env=env,
         )
         box: dict = {}
 
@@ -405,6 +413,9 @@ class RealBackend:
             # a reader cannot tell a retrying loop from a stalled one.
             print(f"[loop] agent turn ({role}) failed, attempt "
                   f"{attempt + 1}/{self.agent_retries}: {last}", flush=True)
+            if self.deadline_epoch is not None and time.time() >= self.deadline_epoch:
+                raise AgentError(f"the budget ran out during an agent turn ({role}); "
+                                 f"not starting it again: {last}")
             if (_TRANSIENT_AGENT_ERR.search(out[-2000:] + err[-2000:])
                     and outage_waits < self.api_outage_retries):
                 outage_waits += 1
@@ -2777,6 +2788,10 @@ def _main(argv: list[str] | None = None) -> int:
                              f"smem.py — recon channel 4 will be unavailable.\n")
             simulator_dir = None
     ref_in_job = _resolve_ref_in_job(cfg, _resolve_ref_spec(cfg))
+    deadline_epoch = time.time() + args.hours * 3600
+    for be in (backend, recon_backend):
+        if be is not None:
+            be.deadline_epoch = deadline_epoch
     ctx = LoopContext(
         op=args.op, workspace=workspace, milestone=milestone, kb_dir=kb_root,
         status_path=status_path, meta_dir=root / "meta", kernel_file=args.kernel_file,
@@ -2785,7 +2800,7 @@ def _main(argv: list[str] | None = None) -> int:
         language=language, gate_window=gate_window, kb_arch=kb_arch,
         ref_baseline=ref_baseline, arch_baseline=arch_baseline,
         window_contract=window_contract,
-        deadline_epoch=time.time() + args.hours * 3600, backend=backend, now=time.time,
+        deadline_epoch=deadline_epoch, backend=backend, now=time.time,
         decisions_dag=[],  # empty -> the driver parses the milestone §4 DAG per meta step
         oracle_path=oracle, oracle_mode=oracle_mode,
         recon_backend=recon_backend, recon_dir=recon_dir, recon_path=recon_path,

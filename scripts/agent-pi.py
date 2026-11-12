@@ -27,6 +27,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -120,6 +121,18 @@ def main(argv: list[str]) -> int:
     proc = subprocess.Popen(pi_argv(model, effort, cwd, state / "sessions", prompt), stdin=subprocess.DEVNULL,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     assert proc.stdout is not None and proc.stderr is not None
+    # A turn that outlives its timeout is ended by SIGTERM to this process's group (timeout-run.py), pi included.
+    # Its tokens were spent all the same: note the signal, let the stream end with pi, and write the turn's line.
+    cut: list[int] = []
+
+    def _cut(signum, frame):
+        cut.append(signum)
+        try:
+            proc.terminate()
+        except ProcessLookupError:
+            pass
+
+    signal.signal(signal.SIGTERM, _cut)
     for raw in proc.stdout:                                  # binary: pi frames events with LF only
         line = raw.strip()
         if not line:
@@ -130,7 +143,9 @@ def main(argv: list[str]) -> int:
             continue
     err = proc.stderr.read().decode("utf-8", "replace")
     rc = proc.wait()
-    if rc == 0 and (turn.failed or not turn.text.strip()):
+    if cut:
+        rc = 124
+    elif rc == 0 and (turn.failed or not turn.text.strip()):
         rc = 1
     record = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(t0)), "role": os.environ.get("FK_AGENT_ROLE", ""),
               "model": model, "effort": effort, "wall_s": round(time.time() - t0, 1), "rc": rc, **turn.usage,
