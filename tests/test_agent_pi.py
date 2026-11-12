@@ -53,7 +53,7 @@ def pi(tmp_path, monkeypatch):
     work.mkdir()
     env = {**os.environ, "FK_PI_BIN": str(fake), "FK_PI_STATE_DIR": str(tmp_path / "state"),
            "FAKE_PI_ARGV": str(tmp_path / "argv.json"), "FK_AGENT_PY": sys.executable}
-    for k in ("FK_DEADLINE_EPOCH", "FK_PI_EXTENSIONS", "FAKE_PI_MODE", "FK_AGENT_ROLE"):
+    for k in ("FK_DEADLINE_EPOCH", "FK_PI_EXTENSIONS", "FK_PI_SKILLS", "FAKE_PI_MODE", "FK_AGENT_ROLE"):
         env.pop(k, None)
 
     def turn(prompt="do it", *args, **more):
@@ -93,6 +93,12 @@ def test_extensions_are_only_the_named_ones_and_no_effort_means_pis_default(pi):
     assert [argv[i + 1] for i, a in enumerate(argv) if a == "--extension"] == ["/a/guard.ts", "/b/policy.ts"]
     r, _, _ = pi("x", "bailian/qwen3.8-max", "ultra", "30")
     assert r.returncode != 0 and "not a pi thinking level" in r.stderr
+
+
+def test_skills_from_outside_the_repository_follow_the_mirrored_ones(pi):
+    r, argv, _ = pi("x", "bailian/qwen3.8-max", "", "30", FK_PI_SKILLS=os.pathsep.join(["/kb/KernelWiki", "/kb/other"]))
+    assert r.returncode == 0 and "--no-skills" not in argv
+    assert [argv[i + 1] for i, a in enumerate(argv) if a == "--skill"][-2:] == ["/kb/KernelWiki", "/kb/other"]
 
 
 def test_a_provider_error_fails_the_turn_with_the_message_the_loop_retries_on(pi):

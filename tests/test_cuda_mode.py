@@ -135,7 +135,10 @@ def test_the_cuda_kb_is_its_own_launchable_lint_clean_tree():
     assert (kb / "TEMPLATE.md").is_file() and (kb / "README.md").is_file()
     assert loop_cli._kb_arch_problem(kb, "sm100") is None
     assert lint_kb_dir(kb / "sm100") == []
-    assert "hw_kb/cuda has no sm90/ tree" in loop_cli._kb_arch_problem(kb, "sm90")
+    # sm90 is an empty tree (index.md only): a CUDA run on Hopper launches and starts with no entries
+    assert loop_cli._kb_arch_problem(kb, "sm90") is None and lint_kb_dir(kb / "sm90") == []
+    assert sorted(p.name for p in (kb / "sm90").iterdir()) == ["index.md"]
+    assert "hw_kb/cuda has no sm120/ tree" in loop_cli._kb_arch_problem(kb, "sm120")
     for entry in sorted((kb / "sm100").glob("*.md")):
         text = entry.read_text(encoding="utf-8")
         assert not re.search(r"\bcute\.[A-Za-z_]|cutlass\.cute|CUTE_DSL|@cute", text), entry.name

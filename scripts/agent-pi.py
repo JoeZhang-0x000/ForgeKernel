@@ -15,7 +15,9 @@ directory>/), outside the tree the loop commits.
 What is passed to pi:
   --model <model>            "provider/id" as pi names it (pi's own models.json / PI_CODING_AGENT_DIR)
   --thinking <effort>        the task's effort, when it has one
-  --skill <dir>              every skill the harness mirrored into ./.claude/skills/ for this turn
+  --skill <dir>              every skill the harness mirrored into ./.claude/skills/ for this turn, then
+                             every directory in FK_PI_SKILLS (os.pathsep-separated): material from outside
+                             the repository, e.g. a knowledge base every compared system reads
   --no-context-files         no AGENTS.md / CLAUDE.md from the working directory or its parents
   --no-extensions, -e FILE   only the extensions named in FK_PI_EXTENSIONS (os.pathsep-separated)
 Stdlib only.
@@ -51,6 +53,7 @@ def pi_argv(model: str, effort: str, cwd: Path, sessions: Path, prompt: str) -> 
     for ext in filter(None, os.environ.get("FK_PI_EXTENSIONS", "").split(os.pathsep)):
         argv += ["--extension", ext]
     skills = sorted(p for p in (cwd / ".claude" / "skills").glob("*") if (p / "SKILL.md").is_file())
+    skills += [Path(p) for p in filter(None, os.environ.get("FK_PI_SKILLS", "").split(os.pathsep))]
     for s in skills:
         argv += ["--skill", str(s)]
     if not skills:
