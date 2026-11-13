@@ -42,6 +42,14 @@ WITH_REF = MINIMAL + '[reference]\nrun = "reference/run.py:run"\nsource = "refer
 REF_FILES = {"reference/run.py": "def run(x, w):\n    return x\n"}
 
 
+def test_what_ends_the_run_is_the_target_unless_the_task_says_the_budget(tmp_path):
+    assert load_task(_task(tmp_path / "a", MINIMAL), kb_root=_kb(tmp_path)).target.stop == "target"
+    t = load_task(_task(tmp_path / "b", MINIMAL + '[target]\nstop = "budget"\n'), kb_root=_kb(tmp_path))
+    assert t.target.stop == "budget" and t.target.ratio is not None
+    with pytest.raises(TaskError, match="stop must be one of"):
+        load_task(_task(tmp_path / "c", MINIMAL + '[target]\nstop = "never"\n'), kb_root=_kb(tmp_path))
+
+
 def test_minimal_task_takes_every_default(tmp_path):
     t = load_task(_task(tmp_path, MINIMAL), kb_root=_kb(tmp_path))
     assert t.name == "rmsnorm"

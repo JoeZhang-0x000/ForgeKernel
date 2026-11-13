@@ -336,6 +336,17 @@ def test_inner_loop_stops_on_target(tmp_path):
     assert reason == "target"
 
 
+def test_a_run_held_to_its_budget_goes_on_past_the_target(tmp_path):
+    # Comparing systems on equal budgets: a first kernel that beats the reference ended the
+    # run after one iteration (a 3 h budget, 2 h used, "stop: target").
+    be = FakeBackend([REC("D1", 1.8)], [EVAL(1.8), NCU])
+    ctx = _ctx(tmp_path, be, target_ms=1.9)
+    ctx.stop_at_target = False
+    ctx.max_iters = 1
+    assert run_inner_loop(ctx, start_iter=0) == "max_iters"
+    assert load_records(ctx.status_path)[0].verdict == "KEEP"
+
+
 # a dual-window eval: e2e reading + pipelined-batch device reading
 EVAL_DW = lambda ms, dev: (  # noqa: E731
     '=== JSON ===\n{"correctness": {"pass": true}, "performance": '

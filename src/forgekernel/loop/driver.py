@@ -430,6 +430,10 @@ class LoopContext:
     plateau_window: int = 3
     max_iters: int = 60
     max_consecutive_reverts: int = 3
+    # False = the run ends at its deadline (or max_iters), never because the target was
+    # reached: for comparing systems on equal budgets, where a first kernel that beats
+    # the reference would otherwise end the run with most of the budget unspent.
+    stop_at_target: bool = True
     # kb-tripwire: a student probe that needs >= this many GPU rounds before its
     # PASS is queued for the end-of-run KB harvest write-up (run_kb_harvest).
     # 0 disables. The threshold is on the *fight* (cumulative rounds per probe
@@ -2903,7 +2907,11 @@ def run_inner_loop(ctx: LoopContext, start_iter: int, *,
             consecutive_reverts = 0
         records = load_records(ctx.status_path)
         best = _best_ms(_on_cluster(records, ctx), ctx.gate_window)
-        if best is not None and (
+        if not ctx.stop_at_target:
+            # A run held to its budget: the target is still what the agents aim at, but
+            # reaching it ends nothing, and no confirming jobs are bought for the hit.
+            pass
+        elif best is not None and (
                 wl_why := _target_workloads_mismatch(ctx, _on_cluster(records, ctx))):
             # the cluster scale's in-job readings divide the same mismatched pair,
             # so neither the absolute hit nor its restatement is read at all;
@@ -2943,7 +2951,7 @@ def run_inner_loop(ctx: LoopContext, start_iter: int, *,
                              f"anchor alone; treat the ratio as unconfirmed")
                     return "target"
                 # a node draw, not a win: fall through and keep climbing
-        if _paired_parity_stop(ctx, rec, iter_no):
+        if ctx.stop_at_target and _paired_parity_stop(ctx, rec, iter_no):
             return "target"
         if segment_records_before is not None:
             # Post-patch segment: hold each gate row against the previous

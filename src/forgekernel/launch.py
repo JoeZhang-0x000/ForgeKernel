@@ -158,6 +158,8 @@ def describe(task, machine) -> str:
                         else " (black box)"))
     target = (f"{task.target.ms} ms" if task.target.ms is not None
               else f"{task.target.ratio}x the reference")
+    if task.target.stop == "budget":
+        target += " (the run ends at its budget, not at the target)"
     lines += [f"  target: {target}, {task.target.timing} timing",
               f"  agents: teacher {_agent_line(task.teacher)}, student "
               f"{_agent_line(task.student)}",
@@ -577,6 +579,8 @@ def run_loop(run, task, *, resuming: bool, harvest_only: bool) -> int:
         argv += ["--target-ms", repr(task.target.ms)]
     else:
         argv += ["--equivalence-ratio", repr(task.target.ratio)]
+    if task.target.stop != "target":
+        argv += ["--stop", task.target.stop]
     if resuming:
         argv += ["--allow-preexisting-artifacts", "--allow-dirty-kb"]
     if policy_free(task):

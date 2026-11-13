@@ -77,6 +77,7 @@ run    = "reference/run.py:run"     # the reference's callable (<file>.py:<funct
 ratio  = 1.2                        # multiple of the reference's speed (>1 = faster than the reference); or ms
 # ms   = 0.85                       # an absolute target (milliseconds)
 timing = "device"                   # the timing basis: device | e2e
+stop   = "target"                   # what ends the loop: target | budget (run the whole budget)
 
 [agent.teacher]
 backend = "claude"

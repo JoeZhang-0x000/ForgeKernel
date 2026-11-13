@@ -2228,6 +2228,10 @@ def _main(argv: list[str] | None = None) -> int:
                    help="reproduce the ref to within this throughput ratio (default 1.0: "
                         "match the reference outright; above 1 = beat it, e.g. 1.05 = 5%% "
                         "more throughput; the stop target is ref_ms / ratio either way)")
+    p.add_argument("--stop", default="target", choices=["target", "budget"],
+                   help="what ends the run: 'target' (default) stops once the target is "
+                        "reached and confirmed; 'budget' keeps iterating until --hours "
+                        "run out, whatever the best kernel reads")
     p.add_argument("--gate-window", default=None, choices=[None, *GATE_WINDOWS],
                    help="timing window every verdict (best / target stop / plateau) "
                         "reads: 'device' = pipelined batch ≈ device time (the "
@@ -2822,6 +2826,7 @@ def _main(argv: list[str] | None = None) -> int:
         precision_contract=precision_contract,
         precision_bench_reports=precision_bench_reports,
         max_consecutive_reverts=args.max_consecutive_reverts,
+        stop_at_target=args.stop == "target",
         m0_audit=not args.no_m0_audit,
         stall_pricing=bool(cfg.get("loop", {}).get("stall_pricing", True)),
         reopen_in_place=bool(cfg.get("loop", {}).get("reopen_in_place", True)),

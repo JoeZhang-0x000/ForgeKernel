@@ -83,6 +83,8 @@ LANGUAGES = ("cutedsl", "cuda")
 # The loop's own language name for each task language (forgekernel.loop.lang_mode).
 LOOP_LANGUAGE = {"cutedsl": "cutedsl", "cuda": "cuda-sol"}
 TIMINGS = ("device", "e2e")
+# What ends the loop: reaching the target, or only the budget (the target stays the agents' aim).
+STOPS = ("target", "budget")
 BACKENDS = ("claude", "pi")
 ROLES = ("teacher", "student")
 MIN_INPUT_GROUPS = 3
@@ -109,7 +111,7 @@ _MODULE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*$")
 _KEYS = {
     "task": {"language", "arch"},
     "reference": {"run", "source", "blackbox", "deny", "deny_urls", "deny_modules"},
-    "target": {"ratio", "ms", "timing"},
+    "target": {"ratio", "ms", "timing", "stop"},
     "agent.role": {"backend", "provider", "model", "effort", "timeout_s"},
     "budget": {"hours", "max_meta", "reference_hours"},
     "leaderboard": {"suite", "card", "ref"},
@@ -169,6 +171,7 @@ class Target:
     ratio: float | None
     ms: float | None
     timing: str
+    stop: str = "target"
 
 
 @dataclass(frozen=True)
@@ -643,8 +646,12 @@ def _read_target(cfg: dict, problems: list[str]) -> Target:
     timing = t.get("timing")
     if timing not in TIMINGS:
         problems.append(f"[target] timing must be one of {list(TIMINGS)}, got {timing!r}")
+    stop = t.get("stop", "target")
+    if stop not in STOPS:
+        problems.append(f"[target] stop must be one of {list(STOPS)}, got {stop!r}")
+        stop = "target"
     return Target(ratio=float(ratio) if _positive(ratio) else None,
-                  ms=float(ms) if _positive(ms) else None, timing=timing)
+                  ms=float(ms) if _positive(ms) else None, timing=timing, stop=stop)
 
 
 def _read_agent(agents: dict, role: str, problems: list[str]) -> AgentSpec:

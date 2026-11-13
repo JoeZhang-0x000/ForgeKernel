@@ -279,6 +279,19 @@ class _Teacher:
         return run_agent
 
 
+def test_a_task_held_to_its_budget_tells_the_loop(repo, monkeypatch):
+    from forgekernel.loop import cli as loop_cli
+    task_dir = _task(repo, toml=REF_TOML + '[target]\nstop = "budget"\n')
+    calls = {}
+    monkeypatch.setattr(loop_cli.RealBackend, "run_agent", _Teacher().method)
+    monkeypatch.setattr(launch, "calibrate", lambda task, op_dir: {
+        "match": True, "tolerance": {"y": 2e-6}, "problems": []})
+    monkeypatch.setattr(loop_cli, "main", _loop_ends(lambda argv: calls.setdefault("loop", argv)))
+    assert _start(task_dir) == 0
+    argv = calls["loop"]
+    assert argv[argv.index("--stop") + 1] == "budget"
+
+
 def test_forge_run_drives_every_stage(repo, monkeypatch):
     from forgekernel.loop import cli as loop_cli
     task_dir = _task(repo)
@@ -296,6 +309,7 @@ def test_forge_run_drives_every_stage(repo, monkeypatch):
     argv = calls["loop"]
     assert argv[0] == "rmsnorm" and argv[argv.index("--workspace") + 1] == str(run.ws)
     assert argv[argv.index("--equivalence-ratio") + 1] == "1.2"
+    assert "--stop" not in argv                  # the target ends the run unless the task says otherwise
     assert "scripts/agent-claude.sh" in argv[argv.index("--agent-cmd") + 1]
     assert (run.ws / ".git").exists() and (run.dir / "report.md").is_file()
     assert json.loads((run.operators_dir / "rmsnorm" / taskcard.PROBLEM).read_text())[

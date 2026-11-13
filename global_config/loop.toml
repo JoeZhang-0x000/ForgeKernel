@@ -3,6 +3,7 @@
 [target]
 ratio  = 1.2                # x the reference's speed
 timing = "device"           # device | e2e
+stop   = "target"           # target | budget: budget = keep iterating until [budget] hours run out
 
 [budget]
 hours           = 4         # the loop's wall clock: reconnaissance, distillation and the student's rounds
